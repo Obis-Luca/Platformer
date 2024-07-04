@@ -32,6 +32,9 @@ class World:
                 elif tile == 6:
                     lava = Lava(colCount * tile_size_width, rowCount * tile_size_height + (tile_size_height // 2))
                     lavaGroup.add(lava)
+                elif tile == 8:
+                    exit = Exit(colCount * tile_size_width + (tile_size_width // 5.5), rowCount * tile_size_height - (tile_size_height // 2))
+                    exitGroup.add(exit)
 
     def draw(self):
         for tile_img, tile_rect in self.tileList:
@@ -132,12 +135,15 @@ class Player:
             # collision with enemies
             if pygame.sprite.spritecollide(self, lavaGroup, False) or pygame.sprite.spritecollide(self, blobGroup,
                                                                                                   False):
+                game_over = -1
+
+            if pygame.sprite.spritecollide(self, exitGroup, False):
                 game_over = 1
 
             # update player coordinates
             self.rect.x += dx
             self.rect.y += dy
-        elif game_over == 1:
+        elif game_over == -1:
             self.image = self.deadImage
             if self.rect.y > 200:
                 self.rect.y -= 5
@@ -175,6 +181,16 @@ class Lava(pygame.sprite.Sprite):
         self.rect.y = y
 
 
+class Exit(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        img = pygame.image.load('images/exit.png')
+        self.image = pygame.transform.scale(img, (tile_size_width // 1.5, tile_size_height * 1.5))
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+
+
 class Button:
     def __init__(self, x, y, img):
         self.image = img
@@ -206,9 +222,10 @@ class Button:
 
 blobGroup = pygame.sprite.Group()
 lavaGroup = pygame.sprite.Group()
+exitGroup = pygame.sprite.Group()
 world = World(world_data)
-player = Player(100, screen_height - 130)
-
+# player = Player(100, screen_height - 130)
+player = Player(1036, 80)
 # buttons
 rstButton = Button(screen_width // 2 - 100, screen_height // 2 + 100, restartButtonImage)
 startBtn = Button(screen_width // 2 - 300, screen_height // 2, startButtonImage)
