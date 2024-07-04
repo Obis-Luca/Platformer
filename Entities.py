@@ -224,8 +224,8 @@ blobGroup = pygame.sprite.Group()
 lavaGroup = pygame.sprite.Group()
 exitGroup = pygame.sprite.Group()
 world = World(world_data)
-# player = Player(100, screen_height - 130)
-player = Player(1036, 80)
+player = Player(100, screen_height - 130)
+
 # buttons
 rstButton = Button(screen_width // 2 - 100, screen_height // 2 + 100, restartButtonImage)
 startBtn = Button(screen_width // 2 - 300, screen_height // 2, startButtonImage)
