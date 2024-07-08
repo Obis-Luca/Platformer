@@ -1,5 +1,8 @@
 from Entities import *
+
 pygame.init()
+
+
 # editing grid
 def draw_grid():
     for line in range(0, 20):
@@ -7,15 +10,6 @@ def draw_grid():
         pygame.draw.line(screen, (255, 255, 255), (line * tile_size_width, 0), (line * tile_size_width, screen_height))
 
 
-def display_message(text):
-    font = pygame.font.SysFont(None, 75)
-    text_surface = font.render(text, True, BLACK)
-    text_rect = text_surface.get_rect(center=(screen_width / 2, screen_height / 2))
-    screen.blit(text_surface, text_rect)
-
-
-gameOver = 0
-mainMenu = True
 run = True
 while run:
     clock.tick(FPS)
@@ -45,7 +39,7 @@ while run:
             display_message("You won!")
             if rstButton.draw():
                 gameOver = 0
-                player.__init__(100,screen_height - 130)
+                player.__init__(100, screen_height - 130)
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:

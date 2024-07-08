@@ -33,8 +33,12 @@ class World:
                     lava = Lava(colCount * tile_size_width, rowCount * tile_size_height + (tile_size_height // 2))
                     lavaGroup.add(lava)
                 elif tile == 8:
-                    exit = Exit(colCount * tile_size_width + (tile_size_width // 5.5), rowCount * tile_size_height - (tile_size_height // 2))
+                    exit = Exit(colCount * tile_size_width + (tile_size_width // 5.5),
+                                rowCount * tile_size_height - (tile_size_height // 2))
                     exitGroup.add(exit)
+                elif tile == 9:
+                    checkpoint = Checkpoint(colCount * tile_size_width, rowCount * tile_size_height)
+                    checkpointGroup.add(checkpoint)
 
     def draw(self):
         for tile_img, tile_rect in self.tileList:
@@ -68,10 +72,9 @@ class Player:
         self.index = 0
         self.counter = 0
         self.direction = 1
+        self.checkpointsReached = 0
 
-    def update(self, game_over):
-        dx = 0
-        dy = 0
+    def update(self, game_over, dx=0, dy=0):
         walkCooldown = 5
 
         if game_over == 0:
@@ -133,12 +136,20 @@ class Player:
                         self.onGround = True
 
             # collision with enemies
-            if pygame.sprite.spritecollide(self, lavaGroup, False) or pygame.sprite.spritecollide(self, blobGroup,
-                                                                                                  False):
+            if pygame.sprite.spritecollide(self, lavaGroup, False) or pygame.sprite.spritecollide(self, blobGroup, False):
                 game_over = -1
+                self.checkpointsReached = 0
 
             if pygame.sprite.spritecollide(self, exitGroup, False):
                 game_over = 1
+                self.checkpointsReached = 0
+
+            if pygame.sprite.spritecollide(self, checkpointGroup, True):
+                self.checkpointsReached += 1
+
+            # exit_rect = exitGroup.sprites()[0].rect
+            # distance_to_exit = abs(self.rect.x - exit_rect.x) + abs(self.rect.y - exit_rect.y)
+            # print(distance_to_exit)
 
             # update player coordinates
             self.rect.x += dx
@@ -191,6 +202,12 @@ class Exit(pygame.sprite.Sprite):
         self.rect.y = y
 
 
+class Checkpoint(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.rect = pygame.Rect(x, y, tile_size_width, tile_size_height)
+
+
 class Button:
     def __init__(self, x, y, img):
         self.image = img
@@ -223,6 +240,8 @@ class Button:
 blobGroup = pygame.sprite.Group()
 lavaGroup = pygame.sprite.Group()
 exitGroup = pygame.sprite.Group()
+checkpointGroup = pygame.sprite.Group()
+
 world = World(world_data)
 player = Player(100, screen_height - 130)
 
