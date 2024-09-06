@@ -1,13 +1,14 @@
+import sys
 import random
 from random import choice, randint, sample
 import pickle
 from Entities import *
 from data import *
 
-population_size = 20
-chromosome_length = 200
+population_size = 20 # 20 for elites.pkl
+chromosome_length = 200 #200 for elites.pkl
 mutation_rate = 0.02
-generations = 20
+generations = 100
 elite_size = 5
 actions = ['left', 'right', 'jump']
 
@@ -23,12 +24,11 @@ class Chromosome:
     def evaluate_fitness(self, render=False):
         train_player = Player(100, screen_height - 130)
         train_world = World(world_data)
-        frame_count = 0
         gameOver = 0
 
         checkpoints_reached = 0
-        best_distance_to_exit = float('inf')
-        best_distance_to_next_checkpoint = float('inf')
+        best_distance_to_next_checkpoint = sys.maxsize
+        time_survived = 0
 
         for action, duration in self.genes:
             if gameOver != 0:
@@ -38,7 +38,8 @@ class Chromosome:
                 if gameOver != 0:
                     break
 
-                frame_count += 1
+                time_survived += 1
+
                 dx, dy = 0, 0
                 if action == 'left':
                     dx = -5
@@ -58,20 +59,16 @@ class Chromosome:
 
                 gameOver = train_player.update(gameOver, dx, dy)
 
+                # Update and draw game elements (if rendering)
                 blobGroup.update()
-                if render:
-                    blobGroup.draw(screen)
                 lavaGroup.update()
-                if render:
-                    lavaGroup.draw(screen)
                 exitGroup.update()
-                if render:
-                    exitGroup.draw(screen)
                 checkpointGroup.update()
                 if render:
+                    blobGroup.draw(screen)
+                    lavaGroup.draw(screen)
+                    exitGroup.draw(screen)
                     train_world.draw()
-
-                if render:
                     pygame.display.update()
                     clock.tick(FPS)
 
@@ -79,34 +76,40 @@ class Chromosome:
                 checkpoint_hits = pygame.sprite.spritecollide(train_player, checkpointGroup, True)
                 if checkpoint_hits:
                     checkpoints_reached += len(checkpoint_hits)
-                    # Update best distance to next checkpoint when a checkpoint is reached
-                    best_distance_to_next_checkpoint = float('inf')
+                    best_distance_to_next_checkpoint = sys.maxsize
 
-                if len(exitGroup.sprites()) > 0:  # Ensure there is an exit in the group
-                    exit_rect = exitGroup.sprites()[0].rect
-                    distance_to_exit = abs(train_player.rect.x - exit_rect.x) + abs(train_player.rect.y - exit_rect.y)
-                    if distance_to_exit < best_distance_to_exit:
-                        best_distance_to_exit = distance_to_exit
-
+                # Find the closest checkpoint
                 if len(checkpointGroup.sprites()) > 0:
-                    next_checkpoint_rect = checkpointGroup.sprites()[0].rect
-                    distance_to_next_checkpoint = abs(train_player.rect.x - next_checkpoint_rect.x) + abs(
-                        train_player.rect.y - next_checkpoint_rect.y)
-                    if distance_to_next_checkpoint < best_distance_to_next_checkpoint:
-                        best_distance_to_next_checkpoint = distance_to_next_checkpoint
+                    # Calculate distances to all checkpoints
+                    checkpoint_distances = [
+                        abs(train_player.rect.x - checkpoint.rect.x) + abs(train_player.rect.y - checkpoint.rect.y)
+                        for checkpoint in checkpointGroup.sprites()
+                    ]
+                    
+                    # Find the minimum distance
+                    current_distance_to_next_checkpoint = min(checkpoint_distances)
+                    
+                    # Update best distance if current distance is smaller
+                    if current_distance_to_next_checkpoint < best_distance_to_next_checkpoint:
+                        best_distance_to_next_checkpoint = current_distance_to_next_checkpoint
 
-        # Calculate fitness
-        self.fitness = (10000 - best_distance_to_exit) + (1000 * checkpoints_reached) - frame_count
+        self.fitness = 1000 * checkpoints_reached  
+
+        # Adjust fitness based on distance to the closest checkpoint
+        if len(checkpointGroup.sprites()) > 0:
+            self.fitness += int( 5000 / (best_distance_to_next_checkpoint + 1)) # Adding 1 to avoid division by zero
 
         # Penalize for getting farther from the nearest checkpoint
         if len(checkpointGroup.sprites()) > 0:
-            next_checkpoint_rect = checkpointGroup.sprites()[0].rect
-            final_distance_to_next_checkpoint = abs(train_player.rect.x - next_checkpoint_rect.x) + abs(
-                train_player.rect.y - next_checkpoint_rect.y)
+            final_checkpoint_distances = [
+                abs(train_player.rect.x - checkpoint.rect.x) + abs(train_player.rect.y - checkpoint.rect.y)
+                for checkpoint in checkpointGroup.sprites()
+            ]
+            final_distance_to_next_checkpoint = min(final_checkpoint_distances)
             if final_distance_to_next_checkpoint > best_distance_to_next_checkpoint:
                 self.fitness -= 10 * (final_distance_to_next_checkpoint - best_distance_to_next_checkpoint)
 
-        # Clear sprite groups
+
         blobGroup.empty()
         lavaGroup.empty()
         exitGroup.empty()
