@@ -1,16 +1,29 @@
+import os
+os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+os.environ.setdefault('SDL_AUDIODRIVER', 'dummy')
+
 import sys
 import random
-from random import choice, randint, sample
 import pickle
+import argparse
+from random import choice, randint, sample
+
+import Entities
 from Entities import *
 from data import *
 
-population_size = 20 # 20 for elites.pkl
-chromosome_length = 200 #200 for elites.pkl
+population_size = 20  # 20 for elites.pkl
+chromosome_length = 200  # 200 for elites.pkl
 mutation_rate = 0.02
-generations = 100
 elite_size = 5
 actions = ['left', 'right', 'jump']
+
+# Fitness tuning constants
+PROGRESS_WEIGHT = 10
+CHECKPOINT_REWARD = 500
+SOLVE_BONUS = 50000
+DEATH_PENALTY = 2000
+TIME_BONUS_SCALE = 20
 
 
 class Chromosome:
@@ -20,15 +33,31 @@ class Chromosome:
         else:
             self.genes = gene
         self.fitness = 1
+        self.max_progress = 0
+        self.checkpoints = 0
+        self.solved = False
 
     def evaluate_fitness(self, render=False):
+        Entities.RENDER_ENABLED = render
+
         train_player = Player(100, screen_height - 130)
         train_world = World(world_data)
         gameOver = 0
 
+        # Capture exit rect once and compute its center.
+        exit_rect = exitGroup.sprites()[0].rect
+        exit_cx = exit_rect.centerx
+        exit_cy = exit_rect.centery
+
         checkpoints_reached = 0
-        best_distance_to_next_checkpoint = sys.maxsize
-        time_survived = 0
+        steps = 0
+        min_dist_to_exit = sys.maxsize
+        start_dist = None
+        solved = False
+        died = False
+
+        # Maximum number of frames this genome could run.
+        max_possible_steps = sum(duration for _, duration in self.genes)
 
         for action, duration in self.genes:
             if gameOver != 0:
@@ -38,7 +67,7 @@ class Chromosome:
                 if gameOver != 0:
                     break
 
-                time_survived += 1
+                steps += 1
 
                 dx, dy = 0, 0
                 if action == 'left':
@@ -59,11 +88,11 @@ class Chromosome:
 
                 gameOver = train_player.update(gameOver, dx, dy)
 
-                # Update and draw game elements (if rendering)
                 blobGroup.update()
                 lavaGroup.update()
                 exitGroup.update()
                 checkpointGroup.update()
+
                 if render:
                     blobGroup.draw(screen)
                     lavaGroup.draw(screen)
@@ -72,43 +101,39 @@ class Chromosome:
                     pygame.display.update()
                     clock.tick(FPS)
 
-                # Check for checkpoint collisions
+                # Manhattan distance to the exit.
+                dist = abs(train_player.rect.centerx - exit_cx) + abs(train_player.rect.centery - exit_cy)
+                if start_dist is None:
+                    start_dist = dist
+                if dist < min_dist_to_exit:
+                    min_dist_to_exit = dist
+
+                # Check for checkpoint collisions.
                 checkpoint_hits = pygame.sprite.spritecollide(train_player, checkpointGroup, True)
                 if checkpoint_hits:
                     checkpoints_reached += len(checkpoint_hits)
-                    best_distance_to_next_checkpoint = sys.maxsize
 
-                # Find the closest checkpoint
-                if len(checkpointGroup.sprites()) > 0:
-                    # Calculate distances to all checkpoints
-                    checkpoint_distances = [
-                        abs(train_player.rect.x - checkpoint.rect.x) + abs(train_player.rect.y - checkpoint.rect.y)
-                        for checkpoint in checkpointGroup.sprites()
-                    ]
-                    
-                    # Find the minimum distance
-                    current_distance_to_next_checkpoint = min(checkpoint_distances)
-                    
-                    # Update best distance if current distance is smaller
-                    if current_distance_to_next_checkpoint < best_distance_to_next_checkpoint:
-                        best_distance_to_next_checkpoint = current_distance_to_next_checkpoint
+                if gameOver == 1:
+                    solved = True
+                    break
+                if gameOver == -1:
+                    died = True
+                    break
 
-        self.fitness = 1000 * checkpoints_reached  
+        if start_dist is None:
+            start_dist = 0
 
-        # Adjust fitness based on distance to the closest checkpoint
-        if len(checkpointGroup.sprites()) > 0:
-            self.fitness += int( 5000 / (best_distance_to_next_checkpoint + 1)) # Adding 1 to avoid division by zero
+        progress = max(0, start_dist - min_dist_to_exit)
+        self.fitness = progress * PROGRESS_WEIGHT + checkpoints_reached * CHECKPOINT_REWARD
+        if solved:
+            self.fitness += SOLVE_BONUS + TIME_BONUS_SCALE * max(0, max_possible_steps - steps)
+        if died:
+            self.fitness -= DEATH_PENALTY
 
-        # Penalize for getting farther from the nearest checkpoint
-        if len(checkpointGroup.sprites()) > 0:
-            final_checkpoint_distances = [
-                abs(train_player.rect.x - checkpoint.rect.x) + abs(train_player.rect.y - checkpoint.rect.y)
-                for checkpoint in checkpointGroup.sprites()
-            ]
-            final_distance_to_next_checkpoint = min(final_checkpoint_distances)
-            if final_distance_to_next_checkpoint > best_distance_to_next_checkpoint:
-                self.fitness -= 10 * (final_distance_to_next_checkpoint - best_distance_to_next_checkpoint)
-
+        # Store for logging.
+        self.max_progress = progress
+        self.checkpoints = checkpoints_reached
+        self.solved = solved
 
         blobGroup.empty()
         lavaGroup.empty()
@@ -151,43 +176,81 @@ def load_population(filename):
         return pickle.load(file)
 
 
-# Initialize population
-# population = [Chromosome() for _ in range(population_size)]
-population = load_population('elites.pkl')
+def train(generations=100, resume=False, seed=42):
+    random.seed(seed)
 
-# Evolution loop
-for generation in range(generations):
-    generation_average_fitness = 0
-    print("Generation " + str(generation))
+    # Initialize population.
+    if resume and os.path.exists('elites.pkl'):
+        population = load_population('elites.pkl')
+    else:
+        population = [Chromosome() for _ in range(population_size)]
 
-    # Evaluate fitness for each chromosome
-    for chromosome in population:
-        chromosome.evaluate_fitness(render=False)
-        generation_average_fitness += chromosome.fitness
+    # Set up CSV logging.
+    log_path = 'training_log.csv'
+    write_header = not os.path.exists(log_path)
+    log_file = open(log_path, 'a')
+    if write_header:
+        log_file.write('generation,best_fitness,avg_fitness,best_progress,best_checkpoints,solved\n')
+        log_file.flush()
 
-    # Sort population by fitness
-    population.sort(key=lambda x: x.fitness, reverse=True)
+    try:
+        for generation in range(generations):
+            total_fitness = 0
 
-    # Elitism: preserve the top N individuals
-    new_population = population[:elite_size]
+            # Evaluate fitness for each chromosome.
+            for chromosome in population:
+                chromosome.evaluate_fitness(render=False)
+                total_fitness += chromosome.fitness
 
-    # Select parents and create new offspring
-    while len(new_population) < population_size:
-        parents = select_parents(population)
-        child1, child2 = crossover(parents[0], parents[1])
-        mutate(child1)
-        mutate(child2)
-        new_population.append(child1)
-        if len(new_population) < population_size:
-            new_population.append(child2)
+            avg_fitness = total_fitness / population_size
 
-    population = new_population
-    print(f"Generation {generation + 1} best fitness: {population[0].fitness}")
-    print(f"Generation average: {generation_average_fitness // population_size}")
+            # Sort population by fitness (descending).
+            population.sort(key=lambda x: x.fitness, reverse=True)
+            best = population[0]
+
+            # CSV log row for this generation.
+            log_file.write(
+                f"{generation},{best.fitness},{avg_fitness},{best.max_progress},"
+                f"{best.checkpoints},{1 if best.solved else 0}\n"
+            )
+            log_file.flush()
+
+            # Save the best individual's replay as a plain dict.
+            replay = {'genes': list(best.genes), 'generation': generation, 'fitness': best.fitness}
+            with open('best_replay.pkl', 'wb') as rf:
+                pickle.dump(replay, rf)
+
+            # Concise per-generation report.
+            solved_str = " SOLVED!" if best.solved else ""
+            print(
+                f"Gen {generation}: best={best.fitness} avg={avg_fitness:.1f} "
+                f"checkpoints={best.checkpoints}{solved_str}"
+            )
+
+            # Elitism: preserve the top N individuals.
+            new_population = population[:elite_size]
+
+            # Select parents and create new offspring.
+            while len(new_population) < population_size:
+                parents = select_parents(population)
+                child1, child2 = crossover(parents[0], parents[1])
+                mutate(child1)
+                mutate(child2)
+                new_population.append(child1)
+                if len(new_population) < population_size:
+                    new_population.append(child2)
+
+            population = new_population
+    finally:
+        log_file.close()
+
+    save_population(population, 'elites.pkl')
 
 
-save_population(population, 'elites.pkl')
-
-# Optionally render the best chromosome of the final generation
-best_chromosome = population[0]
-best_chromosome.evaluate_fitness(render=True)
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Train the evolutionary platformer agent.')
+    parser.add_argument('--generations', type=int, default=100)
+    parser.add_argument('--resume', action='store_true')
+    parser.add_argument('--seed', type=int, default=42)
+    args = parser.parse_args()
+    train(generations=args.generations, resume=args.resume, seed=args.seed)

@@ -2,25 +2,47 @@ import pygame.sprite
 
 from data import *
 
+# When False (default), per-frame blits in Player.update are skipped for headless
+# training speed. Model.py flips this at runtime via Entities.RENDER_ENABLED = True/False.
+RENDER_ENABLED = False
+
+# Cached, pre-scaled image surfaces. data.py already called pygame.display.set_mode
+# at import time, so loading images here is safe. Each image is loaded exactly once.
+DIRT_IMG = pygame.transform.scale(
+    pygame.image.load('images/dirtTile.png'), (tile_size_width, tile_size_height))
+GRASS_IMG = pygame.transform.scale(
+    pygame.image.load('images/grassTile.png'), (tile_size_width, tile_size_height))
+
+GUY_RIGHT_IMGS = []
+GUY_LEFT_IMGS = []
+for _num in range(1, 5):
+    _img = pygame.transform.scale(pygame.image.load(f'images/guy{_num}.png'), (40, 80))
+    GUY_RIGHT_IMGS.append(_img)
+    GUY_LEFT_IMGS.append(pygame.transform.flip(_img, True, False))
+DEAD_IMG = pygame.image.load('images/ghost.png')
+
+BLOB_IMG = pygame.image.load('images/blob.png')
+LAVA_IMG = pygame.transform.scale(
+    pygame.image.load('images/lava.png'), (tile_size_width, tile_size_height // 2))
+EXIT_IMG = pygame.transform.scale(
+    pygame.image.load('images/exit.png'), (tile_size_width // 1.5, tile_size_height * 1.5))
+
 
 class World:
     def __init__(self, data):
         self.tileList = []
 
-        dirtImg = pygame.image.load('images/dirtTile.png')
-        grassImg = pygame.image.load('images/grassTile.png')
-
         for rowCount, row in enumerate(data):
             for colCount, tile in enumerate(row):
                 if tile == 1:
-                    img = pygame.transform.scale(dirtImg, (tile_size_width, tile_size_height))
+                    img = DIRT_IMG
                     img_rect = img.get_rect()
                     img_rect.x = colCount * tile_size_width
                     img_rect.y = rowCount * tile_size_height
                     tile = (img, img_rect)
                     self.tileList.append(tile)
                 elif tile == 2:
-                    img = pygame.transform.scale(grassImg, (tile_size_width, tile_size_height))
+                    img = GRASS_IMG
                     img_rect = img.get_rect()
                     img_rect.x = colCount * tile_size_width
                     img_rect.y = rowCount * tile_size_height
@@ -49,16 +71,11 @@ class Player:
     def __init__(self, x, y):
         # store player moving images into 2 lists
         # right stores the normal images and left one stores them flipped to the left side
-        self.rightImages = []
-        self.leftImages = []
-        for num in range(1, 5):
-            img = pygame.image.load(f'images/guy{num}.png')
-            img = pygame.transform.scale(img, (40, 80))
-            self.rightImages.append(img)
-            self.leftImages.append(pygame.transform.flip(img, True, False))
+        self.rightImages = GUY_RIGHT_IMGS
+        self.leftImages = GUY_LEFT_IMGS
 
         # rectangle variables
-        self.deadImage = pygame.image.load('images/ghost.png')
+        self.deadImage = DEAD_IMG
         self.image = self.rightImages[0]
         self.rect = self.image.get_rect()
         self.rect.x = x
@@ -160,14 +177,15 @@ class Player:
                 self.rect.y -= 5
 
         # draw player onto the screen
-        screen.blit(self.image, self.rect)
+        if RENDER_ENABLED:
+            screen.blit(self.image, self.rect)
         return game_over
 
 
 class Enemy(pygame.sprite.Sprite):
     def __init__(self, x, y):
         pygame.sprite.Sprite.__init__(self)
-        self.image = pygame.image.load('images/blob.png')
+        self.image = BLOB_IMG
         self.rect = self.image.get_rect()
         self.rect.x = x
         self.rect.y = y
@@ -185,8 +203,7 @@ class Enemy(pygame.sprite.Sprite):
 class Lava(pygame.sprite.Sprite):
     def __init__(self, x, y):
         pygame.sprite.Sprite.__init__(self)
-        img = pygame.image.load('images/lava.png')
-        self.image = pygame.transform.scale(img, (tile_size_width, tile_size_height // 2))
+        self.image = LAVA_IMG
         self.rect = self.image.get_rect()
         self.rect.x = x
         self.rect.y = y
@@ -195,8 +212,7 @@ class Lava(pygame.sprite.Sprite):
 class Exit(pygame.sprite.Sprite):
     def __init__(self, x, y):
         pygame.sprite.Sprite.__init__(self)
-        img = pygame.image.load('images/exit.png')
-        self.image = pygame.transform.scale(img, (tile_size_width // 1.5, tile_size_height * 1.5))
+        self.image = EXIT_IMG
         self.rect = self.image.get_rect()
         self.rect.x = x
         self.rect.y = y

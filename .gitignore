@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Training artifacts (regenerated each run)
+elites.pkl
+elites_OLD_incompatible.pkl
+best_replay.pkl
+training_log.csv
+
+# OS / editor
+.DS_Store
+.idea/
